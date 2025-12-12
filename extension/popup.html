@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>TL Automation</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 380px;
+      min-height: 450px;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+    }
+
+    /* Tab Navigation */
+    .tab-nav {
+      display: flex;
+      background: rgba(0, 0, 0, 0.3);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 12px;
+      background: transparent;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-btn.active {
+      color: #4facfe;
+      background: rgba(79, 172, 254, 0.1);
+      border-bottom: 2px solid #4facfe;
+    }
+
+    .tab-content {
+      display: none;
+      padding: 15px;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Header */
+    .header {
+      background: rgba(0, 0, 0, 0.2);
+      padding: 12px 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      background: linear-gradient(90deg, #4facfe, #00f2fe);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #888;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f44336;
+    }
+
+    .status-dot.connected {
+      background: #4caf50;
+    }
+
+    /* Sections */
+    .section {
+      margin-bottom: 15px;
+    }
+
+    .section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #666;
+      margin-bottom: 10px;
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      color: #000;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      margin-top: 10px;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .btn-cancel {
+      background: rgba(244, 67, 54, 0.2);
+      color: #f44336;
+      margin-top: 10px;
+    }
+
+    .btn-small {
+      padding: 8px 12px;
+      font-size: 11px;
+    }
+
+    /* Inputs */
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #4facfe;
+    }
+
+    input[type="text"]::placeholder {
+      color: #666;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      color: #888;
+      margin-bottom: 4px;
+    }
+
+    /* Progress */
+    .progress-container {
+      display: none;
+      margin-bottom: 15px;
+    }
+
+    .progress-container.active {
+      display: block;
+    }
+
+    .progress-bar {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4facfe, #00f2fe);
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    .progress-text {
+      font-size: 11px;
+      color: #888;
+      text-align: center;
+    }
+
+    /* Auction Card */
+    .auction-card {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .auction-title {
+      font-weight: 500;
+      margin-bottom: 6px;
+      line-height: 1.3;
+    }
+
+    .auction-meta {
+      display: none;
+      gap: 10px;
+      font-size: 11px;
+      color: #888;
+    }
+
+    .auction-meta span {
+      background: rgba(79, 172, 254, 0.2);
+      color: #4facfe;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    /* Log Container */
+    .log-container {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 6px;
+      padding: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'Consolas', monospace;
+      font-size: 10px;
+    }
+
+    .log-entry {
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: #888;
+    }
+
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+
+    .log-entry.success {
+      color: #4caf50;
+    }
+
+    .log-entry.error {
+      color: #f44336;
+    }
+
+    .log-entry.info {
+      color: #4facfe;
+    }
+
+    /* Log controls */
+    .log-controls {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    /* Settings Form */
+    .settings-group {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .settings-group-title {
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      color: #4facfe;
+    }
+
+    .note {
+      font-size: 10px;
+      color: #666;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <h1>🚀 TL Automation</h1>
+    <div class="status">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Checking server...</span>
+    </div>
+  </div>
+
+  <!-- Tab Navigation -->
+  <div class="tab-nav">
+    <button class="tab-btn active" data-tab="main">📋 Main</button>
+    <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+  </div>
+
+  <!-- Main Tab -->
+  <div class="tab-content active" id="tab-main">
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-text" id="progressText">Processing...</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Current Page</div>
+      <div class="auction-card">
+        <div class="auction-title" id="auctionTitle">Navigate to a TL auction page</div>
+        <div class="auction-meta" id="auctionMeta">
+          <span id="auctionCondition"></span>
+          <span id="auctionTime"></span>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="processBtn" disabled>
+        <span>⚡</span> Process This Auction
+      </button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Batch Processing</div>
+      <button class="btn btn-secondary" id="batchBtn" disabled>
+        <span>📋</span> Process All Links from Sheet
+      </button>
+      <button class="btn btn-cancel" id="cancelBtn" style="display: none;">
+        <span>⛔</span> Cancel Processing
+      </button>
+      <p class="note" style="margin-top: 8px;">
+        Processing continues in background even if you close this popup.
+      </p>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Activity Log</div>
+      <div class="log-container" id="logContainer">
+        <div class="log-entry">Loading logs...</div>
+      </div>
+      <div class="log-controls">
+        <button class="btn btn-secondary btn-small" id="refreshLogsBtn" style="flex:1;">🔄 Refresh</button>
+        <button class="btn btn-secondary btn-small" id="clearLogsBtn" style="flex:1;">🗑️ Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Tab -->
+  <div class="tab-content" id="tab-settings">
+    <div class="settings-group">
+      <div class="settings-group-title">🔗 Apps Script Web App</div>
+      <label>Web App URL (required)</label>
+      <input type="text" id="appsScriptUrl" placeholder="https://script.google.com/macros/s/.../exec">
+      <p class="note">Deploy your Apps Script as a Web App and paste the URL here.</p>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">📊 Google Sheet IDs</div>
+
+      <label>Analysis Sheet ID (BSTOCK Template)</label>
+      <input type="text" id="analysisSheetId" placeholder="1i5gYasyESN8L332m3J5gzQjwIomiLZ1vQw8ZBz5rLJk">
+      <p class="note">The spreadsheet containing WorkSheet and BSTOCK Template tabs.</p>
+
+      <label style="margin-top: 12px;">Notes Sheet ID (12/12 Notes)</label>
+      <input type="text" id="notesSheetId" placeholder="15dsm8Awu0oW0yyn6xgaYTQ5jdnzMnXfVyqIsnoUx1GA">
+      <p class="note">The spreadsheet containing the BbList tab for notes.</p>
+    </div>
+
+    <button class="btn btn-primary" id="saveSettingsBtn">
+      💾 Save Settings
+    </button>
+
+    <p class="note" style="margin-top: 12px; text-align: center;">
+      Settings are stored locally in this browser.
+    </p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>
