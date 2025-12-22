@@ -38,7 +38,7 @@ function extractAuctionData() {
     }
 
     // Look for manifest download link
-    const manifestLink = document.querySelector('a[href*="manifest"], button:contains("Download Manifest")');
+    const manifestLink = document.querySelector('a[href*="manifest"]');
     if (manifestLink) {
         data.manifestUrl = manifestLink.href;
     }
@@ -46,11 +46,72 @@ function extractAuctionData() {
     return data;
 }
 
-// Listen for messages from popup
+// Extract current bid and shipping from Price Breakdown section
+function extractPrices() {
+    let bid = 0;
+    let shipping = 0;
+
+    // Helper to parse price string
+    const parsePrice = (str) => {
+        if (!str || str.includes('---') || str.includes('--')) return 0;
+        const match = str.match(/\$?([\d,]+(?:\.\d{2})?)/);
+        return match ? parseFloat(match[1].replace(/,/g, '')) : 0;
+    };
+
+    // Find all pricing box items using the discovered selectors
+    const pricingItems = document.querySelectorAll('.lot-pricing-box-item');
+
+    pricingItems.forEach(item => {
+        const labelEl = item.querySelector('.col-xs-9');
+        const valueEl = item.querySelector('.col-xs-3');
+
+        if (!labelEl || !valueEl) return;
+
+        const label = labelEl.textContent.trim().toLowerCase();
+        const valueText = valueEl.textContent.trim();
+
+        // Check for bid-related labels
+        if (label.includes('current bid') || label.includes('starting bid') || label.includes('lot price')) {
+            bid = parsePrice(valueText);
+            console.log('[TL] Found bid:', bid, 'from label:', label);
+        }
+
+        // Check for shipping label
+        if (label.includes('shipping')) {
+            shipping = parsePrice(valueText);
+            console.log('[TL] Found shipping:', shipping, 'from label:', label);
+        }
+    });
+
+    // Fallback: try generic text search if pricing box not found
+    if (bid === 0) {
+        const bodyText = document.body.innerText;
+        // Look for "Current Bid" followed by a price
+        const bidMatch = bodyText.match(/(?:Current Bid|Starting Bid|Lot Price)[^\$]*\$([\d,]+(?:\.\d{2})?)/i);
+        if (bidMatch) {
+            bid = parseFloat(bidMatch[1].replace(/,/g, ''));
+            console.log('[TL] Fallback bid found:', bid);
+        }
+    }
+
+    return { bid, shipping };
+}
+
+// Check if auction is closed
+function isAuctionClosed() {
+    const text = document.body.innerText;
+    return text.includes('Auction Closed') || text.includes('Bidding has ended');
+}
+
+// Listen for messages from background/popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'extractData') {
         const data = extractAuctionData();
         sendResponse(data);
+    } else if (request.action === 'extractPrices') {
+        const prices = extractPrices();
+        const closed = isAuctionClosed();
+        sendResponse({ ...prices, closed });
     }
     return true;
 });

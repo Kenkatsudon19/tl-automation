@@ -77,6 +77,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshLogsBtn.addEventListener('click', loadLogs);
     clearLogsBtn.addEventListener('click', clearLogs);
 
+    // Prices tab handlers
+    const updatePricesBtn = document.getElementById('updatePricesBtn');
+    const cancelPricesBtn = document.getElementById('cancelPricesBtn');
+    if (updatePricesBtn) {
+        updatePricesBtn.addEventListener('click', startPricesUpdate);
+    }
+    if (cancelPricesBtn) {
+        cancelPricesBtn.addEventListener('click', cancelPricesUpdate);
+    }
+
     // Periodically check background status
     statusCheckInterval = setInterval(async () => {
         await checkBackgroundStatus();
@@ -172,21 +182,31 @@ async function clearLogs() {
 }
 
 function renderLogs(logs) {
-    if (logs.length === 0) {
-        logContainer.innerHTML = '<div class="log-entry">No logs yet...</div>';
-        return;
+    const html = logs.length === 0
+        ? '<div class="log-entry">No logs yet...</div>'
+        : logs.map(log => `<div class="log-entry ${log.type}">[${log.time}] ${log.message}</div>`).join('');
+
+    // Update main log container
+    if (logContainer) {
+        logContainer.innerHTML = html;
+        logContainer.scrollTop = logContainer.scrollHeight;
     }
 
-    logContainer.innerHTML = logs.map(log =>
-        `<div class="log-entry ${log.type}">[${log.time}] ${log.message}</div>`
-    ).join('');
-
-    logContainer.scrollTop = logContainer.scrollHeight;
+    // Update prices log container
+    const pricesLogContainer = document.getElementById('pricesLogContainer');
+    if (pricesLogContainer) {
+        pricesLogContainer.innerHTML = html;
+        pricesLogContainer.scrollTop = pricesLogContainer.scrollHeight;
+    }
 }
 
 async function checkBackgroundStatus() {
     try {
         const response = await chrome.runtime.sendMessage({ action: 'getStatus' });
+
+        // Get prices buttons
+        const updatePricesBtn = document.getElementById('updatePricesBtn');
+        const cancelPricesBtn = document.getElementById('cancelPricesBtn');
 
         if (response.isProcessing) {
             showProgress(true);
@@ -196,6 +216,10 @@ async function checkBackgroundStatus() {
             );
             batchBtn.disabled = true;
             cancelBtn.style.display = 'block';
+
+            // Also disable prices button during processing
+            if (updatePricesBtn) updatePricesBtn.disabled = true;
+            if (cancelPricesBtn) cancelPricesBtn.style.display = 'block';
         } else {
             showProgress(false);
             cancelBtn.style.display = 'none';
@@ -203,6 +227,10 @@ async function checkBackgroundStatus() {
             // Re-enable batch button if server is online
             const serverOnline = statusDot.classList.contains('connected');
             batchBtn.disabled = !serverOnline;
+
+            // Re-enable prices button (doesn't require server)
+            if (updatePricesBtn) updatePricesBtn.disabled = false;
+            if (cancelPricesBtn) cancelPricesBtn.style.display = 'none';
         }
     } catch (error) {
         console.log('Background status check error:', error);
@@ -310,4 +338,37 @@ function showProgress(show) {
 function updateProgress(percent, text) {
     progressFill.style.width = `${percent}%`;
     progressText.textContent = text;
+}
+
+// Prices tab functions
+async function startPricesUpdate() {
+    const storage = await chrome.storage.local.get('appsScriptUrl');
+    const appsScriptUrl = storage.appsScriptUrl;
+
+    if (!appsScriptUrl) {
+        alert('Apps Script URL not configured. Go to Settings tab.');
+        switchTab('settings');
+        return;
+    }
+
+    const updatePricesBtn = document.getElementById('updatePricesBtn');
+    const cancelPricesBtn = document.getElementById('cancelPricesBtn');
+
+    await chrome.runtime.sendMessage({
+        action: 'startPricesUpdate',
+        appsScriptUrl: appsScriptUrl,
+        config: getConfig()
+    });
+
+    if (updatePricesBtn) updatePricesBtn.disabled = true;
+    if (cancelPricesBtn) cancelPricesBtn.style.display = 'block';
+
+    showProgress(true);
+    updateProgress(0, 'Starting prices update...');
+}
+
+async function cancelPricesUpdate() {
+    await chrome.runtime.sendMessage({ action: 'cancelPricesUpdate' });
+    const cancelPricesBtn = document.getElementById('cancelPricesBtn');
+    if (cancelPricesBtn) cancelPricesBtn.style.display = 'none';
 }

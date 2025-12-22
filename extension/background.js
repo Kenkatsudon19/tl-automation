@@ -59,6 +59,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then(result => sendResponse(result))
             .catch(err => sendResponse({ error: err.message }));
         return true;
+    } else if (message.action === 'startPricesUpdate') {
+        startPricesUpdate(message.appsScriptUrl, message.config);
+        sendResponse({ started: true });
+    } else if (message.action === 'cancelPricesUpdate') {
+        shouldCancel = true;
+        addLog('Cancelling prices update...', 'info');
+        sendResponse({ cancelled: true });
     }
     return true;
 });
@@ -253,6 +260,154 @@ async function startBatchProcessing(appsScriptUrl, config = {}) {
 
     } catch (error) {
         addLog(`Batch error: ${error.message}`, 'error');
+        currentProgress.status = `Error: ${error.message}`;
+        showErrorBadge();
+    } finally {
+        isProcessing = false;
+        shouldCancel = false;
+    }
+}
+
+// Prices Update - Scrapes bid and shipping from all TL links
+async function startPricesUpdate(appsScriptUrl, config = {}) {
+    if (isProcessing) {
+        addLog('Already processing', 'error');
+        return;
+    }
+
+    isProcessing = true;
+    shouldCancel = false;
+    addLog('=== Starting Prices Update ===', 'info');
+
+    try {
+        setBadge('...', '#888');
+        addLog('Fetching ALL links from WorkSheet...', 'info');
+
+        // Request all links (processed or not) using filter: 'all'
+        const linksResponse = await fetchWithRetry(appsScriptUrl, {
+            method: 'POST',
+            mode: 'cors',
+            redirect: 'follow',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'getLinks', filter: 'all', config: config })
+        });
+
+        const linksData = await linksResponse.json();
+        const links = linksData.links || [];
+
+        if (links.length === 0) {
+            addLog('No TL links found in WorkSheet', 'error');
+            currentProgress = { current: 0, total: 0, status: 'No links found' };
+            showErrorBadge();
+            isProcessing = false;
+            return;
+        }
+
+        addLog(`Found ${links.length} links to update`, 'success');
+        currentProgress = { current: 0, total: links.length, status: 'Starting...' };
+
+        let updated = 0;
+        let failed = 0;
+
+        for (let i = 0; i < links.length; i++) {
+            if (shouldCancel) {
+                addLog(`Cancelled at ${i}/${links.length}`, 'error');
+                currentProgress.status = 'Cancelled';
+                showErrorBadge();
+                break;
+            }
+
+            const link = links[i];
+            const displayUrl = link.url.split('/detail/')[1]?.split('/')[0] || 'Link ' + (i + 1);
+
+            currentProgress = {
+                current: i + 1,
+                total: links.length,
+                status: `Checking ${displayUrl}...`
+            };
+            showLoadingBadge(i + 1, links.length);
+
+            let tabId = null;
+            try {
+                // Open tab in background
+                const tab = await chrome.tabs.create({ url: link.url, active: false });
+                tabId = tab.id;
+
+                // Wait for page to load (Angular needs time)
+                await new Promise(r => setTimeout(r, 5000));
+
+                // Try to extract prices with retries
+                let prices = { bid: 0, shipping: 0 };
+                let attempts = 0;
+                while (prices.bid === 0 && attempts < 3) {
+                    try {
+                        const response = await chrome.tabs.sendMessage(tabId, { action: 'extractPrices' });
+                        if (response && response.bid > 0) {
+                            prices = response;
+                        }
+                    } catch (err) {
+                        // Content script might not be ready yet
+                    }
+                    if (prices.bid === 0) {
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
+                    attempts++;
+                }
+
+                if (prices.bid > 0) {
+                    // Send to Apps Script to update worksheet
+                    await fetchWithRetry(appsScriptUrl, {
+                        method: 'POST',
+                        mode: 'cors',
+                        redirect: 'follow',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'updatePrices',
+                            row: link.row,
+                            bid: prices.bid,
+                            shipping: prices.shipping,
+                            config: config
+                        })
+                    });
+                    updated++;
+                    addLog(`✓ ${displayUrl}: Bid $${prices.bid}, Ship $${prices.shipping}`, 'success');
+                } else {
+                    failed++;
+                    addLog(`? ${displayUrl}: No price found`, 'error');
+                }
+
+            } catch (error) {
+                failed++;
+                addLog(`✗ ${displayUrl}: ${error.message}`, 'error');
+            } finally {
+                // Close the tab
+                if (tabId) {
+                    try { await chrome.tabs.remove(tabId); } catch (e) { }
+                }
+            }
+
+            // Rate limit - wait before next tab
+            if (i < links.length - 1 && !shouldCancel) {
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+
+        currentProgress = {
+            current: links.length,
+            total: links.length,
+            status: `Done: ${updated} updated, ${failed} failed`
+        };
+
+        addLog(`=== Prices update complete: ${updated} updated, ${failed} failed ===`, updated > 0 ? 'success' : 'error');
+
+        if (failed === 0 && updated > 0) {
+            showSuccessBadge();
+        } else {
+            showErrorBadge();
+        }
+
+    } catch (error) {
+        addLog(`Prices update error: ${error.message}`, 'error');
         currentProgress.status = `Error: ${error.message}`;
         showErrorBadge();
     } finally {

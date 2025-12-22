@@ -5,7 +5,8 @@
     "description": "Automate TechLiquidators auction processing",
     "permissions": [
         "activeTab",
-        "storage"
+        "storage",
+        "tabs"
     ],
     "host_permissions": [
         "https://www.techliquidators.com/*",

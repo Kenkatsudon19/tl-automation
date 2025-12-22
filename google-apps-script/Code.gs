@@ -41,8 +41,16 @@ function doPost(e) {
     }
     
     if (data.action === 'getLinks') {
-      const links = getLinksFromWorkSheet(sheetIds);
+      // Pass filter parameter - if 'all', return all TL links regardless of column B
+      const getAll = data.filter === 'all';
+      const links = getLinksFromWorkSheet(sheetIds, getAll);
       return ContentService.createTextOutput(JSON.stringify({ links: links }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    if (data.action === 'updatePrices') {
+      const result = updatePrices(data.row, data.bid, data.shipping, sheetIds);
+      return ContentService.createTextOutput(JSON.stringify(result))
         .setMimeType(ContentService.MimeType.JSON);
     }
     
@@ -227,13 +235,17 @@ function createBSTOCKSheet(auction, manifestItems, sheetIds) {
     console.log('Error setting condition:', e.message);
   }
   
-  // A12:A = UPC, C12:C = Qty
+  // A12:A = UPC (as plain text to preserve leading zeros), C12:C = Qty
   if (manifestItems && manifestItems.length > 0) {
-    const upcs = manifestItems.map(item => [item.upc]);
+    // Convert UPC to string to preserve leading zeros
+    const upcs = manifestItems.map(item => [String(item.upc || '')]);
     const qtys = manifestItems.map(item => [item.quantity]);
     
     const startRow = 12;
-    newSheet.getRange(startRow, 1, upcs.length, 1).setValues(upcs);  // Column A = UPC
+    // Set number format to plain text BEFORE setting values to preserve leading zeros
+    const upcRange = newSheet.getRange(startRow, 1, upcs.length, 1);
+    upcRange.setNumberFormat('@');  // @ = plain text format
+    upcRange.setValues(upcs);  // Column A = UPC
     newSheet.getRange(startRow, 3, qtys.length, 1).setValues(qtys);  // Column C = Qty
   }
   
@@ -294,15 +306,18 @@ function populateNotesSheet(auction, manifestItems, sheetIds) {
     startRow = 2;
   }
   
-  // Prepare data: A = UPC, B = Product Name, C = Unit Retail, D = Condition
+  // Prepare data: A = UPC (plain text to preserve leading zeros), B = Product Name, C = Unit Retail, D = Condition
   if (manifestItems && manifestItems.length > 0) {
+    // Convert UPC to string to preserve leading zeros
     const data = manifestItems.map(item => [
-      item.upc,                           // Column A: Item # (UPC)
+      String(item.upc || ''),             // Column A: Item # (UPC) - as string
       item.productName,                   // Column B: Item Description (Product Name)
       item.unitRetail,                    // Column C: Unit Retail (UR)
       auction.conditionForNotes           // Column D: Condition (UR, USED, NEW, OB)
     ]);
     
+    // Set column A number format to plain text BEFORE setting values
+    sheet.getRange(startRow, 1, data.length, 1).setNumberFormat('@');  // @ = plain text format for UPC column
     sheet.getRange(startRow, 1, data.length, 4).setValues(data);
     console.log('Pasted', data.length, 'items at row', startRow);
   }
@@ -312,9 +327,11 @@ function populateNotesSheet(auction, manifestItems, sheetIds) {
 }
 
 /**
- * Get all links from WorkSheet for batch processing (only where column B is blank)
+ * Get all links from WorkSheet for batch processing
+ * @param {object} sheetIds - Sheet IDs
+ * @param {boolean} getAll - If true, return ALL TL links; if false, only where column B is blank
  */
-function getLinksFromWorkSheet(sheetIds) {
+function getLinksFromWorkSheet(sheetIds, getAll = false) {
   const ss = SpreadsheetApp.openById(sheetIds.analysisSheetId);
   const sheet = ss.getSheetByName('WorkSheet');
   
@@ -332,21 +349,46 @@ function getLinksFromWorkSheet(sheetIds) {
   const range = sheet.getRange(4, 1, lastRow - 3, 2);  // Columns A and B
   const values = range.getValues();
   
-  // Filter: only return rows where column A has TL link AND column B is blank
+  // Filter based on getAll parameter
   const links = values
     .map((row, index) => ({ 
       url: row[0], 
       sheetLink: row[1],  // Column B value
       row: index + 4 
     }))
-    .filter(item => 
-      item.url && 
-      item.url.toString().includes('techliquidators.com') &&
-      (!item.sheetLink || item.sheetLink.toString().trim() === '')  // Only if B is blank
-    );
+    .filter(item => {
+      if (!item.url || !item.url.toString().includes('techliquidators.com')) {
+        return false;  // Must be a TL link
+      }
+      if (getAll) {
+        return true;  // Return all TL links
+      }
+      // Only if B is blank (for sheet creation)
+      return !item.sheetLink || item.sheetLink.toString().trim() === '';
+    });
   
-  console.log(`Found ${links.length} unprocessed links (column B blank)`);
+  console.log(`Found ${links.length} links (getAll=${getAll})`);
   return links;
+}
+
+/**
+ * Update bid and shipping prices in WorkSheet
+ * Column C = Bid, Column D = Shipping
+ */
+function updatePrices(row, bid, shipping, sheetIds) {
+  const ss = SpreadsheetApp.openById(sheetIds.analysisSheetId);
+  const worksheet = ss.getSheetByName('WorkSheet');
+  
+  if (!worksheet) {
+    return { error: 'WorkSheet not found' };
+  }
+  
+  // Update Column C (Bid) and Column D (Shipping)
+  worksheet.getRange(row, 3).setValue(bid);      // Column C = Bid
+  worksheet.getRange(row, 4).setValue(shipping); // Column D = Shipping
+  
+  console.log(`Updated row ${row}: Bid=$${bid}, Shipping=$${shipping}`);
+  return { success: true, row: row, bid: bid, shipping: shipping };
 }
 
 /**
